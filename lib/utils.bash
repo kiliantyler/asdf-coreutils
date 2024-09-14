@@ -43,34 +43,18 @@ check_installed() {
 	command -v "$1" >/dev/null
 }
 
-check_colors() {
-	[ -n "${NO_COLOR}" ] && return 1                        # NO_COLOR is set
-	[ -n "${FORCE_COLOR}" ] && return 0                     # FORCE_COLOR is set
-	[ -n "${TERM}" ] && [ "${TERM}" != "dumb" ] && return 0 # TERM is set to a non-dumb value
-	return 1
-}
-
-print_tools_installed() {
+print_tools() {
 	local program_list=("$@")
-	echo "$TOOL_NAME $version installation was successful!"
 	if check_installed column; then
 		print_table "${program_list[@]}"
 	else
 		local print_list=("$(awk '{gsub(" ",", "); print }' <<<"${program_list[@]}")")
-		echo "Programs installed: ${print_list[*]}"
+		echo "${print_list[*]}"
 	fi
 }
 
 print_table() {
 	local values=("$@")
-	if check_colors; then
-		green="\033[0;32m"
-		reset="\033[0m"
-	else
-		green=""
-		reset=""
-	fi
-	printf "%sPrograms installed:%s\n" "${green}" "${reset}"
 	for value in "${values[@]}"; do
 		printf "%-8s\n" "${value}"
 	done | column
@@ -109,8 +93,22 @@ install_version() {
 	local version="$2"
 	local install_path="$3"
 	local install_log="$ASDF_DOWNLOAD_PATH/install.log"
-	local -a coreutils_programs
+	local -a no_install_progs build_if_possible_progs default_progs
 
+	# generate list of programs
+  IFS=$'\n'; for line in $(./build-aux/gen-lists-of-programs.sh --automake); do
+    case "$line" in
+      no_install__progs*src/*)
+        no_install_progs+=("${line#*src/}")
+        ;;
+      build_if_possible__progs*src/*)
+        build_if_possible_progs+=("${line#*src/}")
+        ;;
+      default__progs*src/*)
+        default_progs+=("${line#*src/}")
+        ;;
+    esac
+  done
 	if [ "$install_type" != "version" ]; then
 		fail "asdf-$TOOL_NAME supports release installs only"
 	fi
@@ -122,8 +120,8 @@ install_version() {
 		echo "* Installing $TOOL_NAME release $version..."
 		{
 			# shellcheck disable=SC2086
-			./configure -C --prefix="$install_path" ${MAKE_BUILD_OPTIONS}
-			coreutils_programs=$(./build-aux/gen-lists-of-programs.sh --list-progs)
+			./configure -C --prefix="$install_path" ${MAKE_BUILD_OPTIONS} --enable-install-program=arch,coreutils,hostname
+			full_coreutils_programs=$(./build-aux/gen-lists-of-programs.sh --list-progs)
 			make install
 			chmod +x "$install_path/bin/*"
 		} &>"$install_log"
@@ -131,14 +129,33 @@ install_version() {
 		local tool_cmd
 		tool_cmd="$(echo "$TOOL_TEST" | cut -d' ' -f1)"
 
-		# validate all coreutils programs are installed
+		# validate "coreutils" command is installed
+		test -x "$install_path/bin/$tool_cmd" || fail "Expected $install_path/bin/$tool_cmd to be executable."
+
+		# validate the rest of the programs are installed
+		local coreutils_programs not_installed_programs
+		coreutils_programs+=${default_progs[@]}
+		coreutils_programs+=${no_install_progs[@]}
 		for program in $coreutils_programs; do
 			if [ ! -x "$install_path/bin/$program" ]; then
 				fail "Expected $install_path/bin/$program to be executable."
 			fi
 		done
 
-		print_tools_installed "$coreutils_programs"
+		# check for "build_if_possible" programs
+		for program in ${build_if_possible_progs[@]}; do
+			if [ -x "$install_path/bin/$program" ]; then
+				coreutils_programs+=("$program")
+			else
+				not_installed_programs+=("$program")
+			fi
+		done
+		echo "$TOOL_NAME $version installation was successful!"
+		echo "The following programs were installed:"
+		print_tools "$coreutils_programs"
+
+		echo "The following programs were not installed:"
+		print_tools "$not_installed_programs"
 	) || (
 		rm -rf "$install_path"
 		fail "An error ocurred while installing $TOOL_NAME $version. install log is $install_log"
