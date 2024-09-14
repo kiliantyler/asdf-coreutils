@@ -115,6 +115,9 @@ install_version() {
 					build_if_possible_progs+=("${line#*src/}")
 					;;
 				default__progs*src/*)
+					if [[ "${line#*src/}" == "ginstall" ]]; then
+          	line=install
+        	fi
 					default_progs+=("${line#*src/}")
 					;;
 				esac
