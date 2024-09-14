@@ -9,7 +9,8 @@ TOOL_TEST="coreutils --help"
 
 MAKE_CHECK_SIGNATURES="${MAKE_CHECK_SIGNATURES:-strict}"
 MAKE_PRINT_BUILD_LOG="${MAKE_PRINT_BUILD_LOG:-no}"
-MAKE_BUILD_OPTIONS="${MAKE_BUILD_OPTIONS:---with-guile=no}"
+ADDITIONAL_BUILD_PROGRAMS="${ADDITIONAL_BUILD_PROGRAMS:-"arch,coreutils,hostname"}"
+MAKE_BUILD_OPTIONS="${MAKE_BUILD_OPTIONS:-"--with-guile=no --enable-install-program=${ADDITIONAL_BUILD_PROGRAMS}"}"
 
 fail() {
 	echo -e "asdf-$TOOL_NAME: $*"
@@ -102,7 +103,7 @@ install_version() {
 		echo "* Installing $TOOL_NAME release $version..."
 		{
 			# shellcheck disable=SC2086
-			./configure -C --prefix="$install_path" ${MAKE_BUILD_OPTIONS} --enable-install-program=arch,coreutils,hostname
+			./configure -C --prefix="$install_path" ${MAKE_BUILD_OPTIONS}
 			# generate list of programs
 			IFS=$'\n'
 			for line in $(./build-aux/gen-lists-of-programs.sh --automake); do
@@ -130,29 +131,33 @@ install_version() {
 
 		# validate "coreutils" command is installed
 		test -x "$install_path/bin/$tool_cmd" || fail "Expected $install_path/bin/$tool_cmd to be executable."
+		programs=("${default_progs[@]}")
+		local -a not_installed_programs installed_programs programs
+		programs=("${default_progs[@]}")
+
+		if [ -n "$ADDITIONAL_BUILD_PROGRAMS" ]; then
+			programs+=($(echo "$ADDITIONAL_BUILD_PROGRAMS" | tr ',' '\n'))
+		fi
 
 		# validate the rest of the programs are installed
-		local -a coreutils_programs
-		local -a not_installed_programs
-		coreutils_programs+=${default_progs[*]}
-		coreutils_programs+=${no_install_progs[*]}
-		for program in $coreutils_programs; do
+		for program in "${programs[@]}"; do
 			if [ ! -x "$install_path/bin/$program" ]; then
 				fail "Expected $install_path/bin/$program to be executable."
 			fi
+			installed_programs+=("$program")
 		done
 
 		# check for "build_if_possible" programs
 		for program in "${build_if_possible_progs[@]}"; do
 			if [ -x "$install_path/bin/$program" ]; then
-				coreutils_programs+=("$program")
+				installed_programs+=("$program")
 			else
 				not_installed_programs+=("$program")
 			fi
 		done
 		echo "$TOOL_NAME $version installation was successful!"
 		echo "The following programs were installed:"
-		print_tools "${coreutils_programs[@]}"
+		print_tools "${installed_programs[@]}"
 
 		echo "The following programs were not installed:"
 		print_tools "${not_installed_programs[@]}"
