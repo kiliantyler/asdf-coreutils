@@ -95,24 +95,6 @@ install_version() {
 	local install_log="$ASDF_DOWNLOAD_PATH/install.log"
 	local -a no_install_progs build_if_possible_progs default_progs
 
-	# generate list of programs
-  IFS=$'\n'; for line in $(./build-aux/gen-lists-of-programs.sh --automake); do
-    case "$line" in
-      no_install__progs*src/*)
-        no_install_progs+=("${line#*src/}")
-        ;;
-      build_if_possible__progs*src/*)
-        build_if_possible_progs+=("${line#*src/}")
-        ;;
-      default__progs*src/*)
-        default_progs+=("${line#*src/}")
-        ;;
-    esac
-  done
-	if [ "$install_type" != "version" ]; then
-		fail "asdf-$TOOL_NAME supports release installs only"
-	fi
-
 	(
 		mkdir -p "$install_path"
 		cd "$ASDF_DOWNLOAD_PATH"
@@ -121,7 +103,24 @@ install_version() {
 		{
 			# shellcheck disable=SC2086
 			./configure -C --prefix="$install_path" ${MAKE_BUILD_OPTIONS} --enable-install-program=arch,coreutils,hostname
-			full_coreutils_programs=$(./build-aux/gen-lists-of-programs.sh --list-progs)
+			# generate list of programs
+			IFS=$'\n'
+			for line in $(./build-aux/gen-lists-of-programs.sh --automake); do
+				case "$line" in
+				no_install__progs*src/*)
+					no_install_progs+=("${line#*src/}")
+					;;
+				build_if_possible__progs*src/*)
+					build_if_possible_progs+=("${line#*src/}")
+					;;
+				default__progs*src/*)
+					default_progs+=("${line#*src/}")
+					;;
+				esac
+			done
+			if [ "$install_type" != "version" ]; then
+				fail "asdf-$TOOL_NAME supports release installs only"
+			fi
 			make install
 			chmod +x "$install_path/bin/*"
 		} &>"$install_log"
@@ -133,9 +132,10 @@ install_version() {
 		test -x "$install_path/bin/$tool_cmd" || fail "Expected $install_path/bin/$tool_cmd to be executable."
 
 		# validate the rest of the programs are installed
-		local coreutils_programs not_installed_programs
-		coreutils_programs+=${default_progs[@]}
-		coreutils_programs+=${no_install_progs[@]}
+		local -a coreutils_programs
+		local -a not_installed_programs
+		coreutils_programs+=${default_progs[*]}
+		coreutils_programs+=${no_install_progs[*]}
 		for program in $coreutils_programs; do
 			if [ ! -x "$install_path/bin/$program" ]; then
 				fail "Expected $install_path/bin/$program to be executable."
@@ -143,7 +143,7 @@ install_version() {
 		done
 
 		# check for "build_if_possible" programs
-		for program in ${build_if_possible_progs[@]}; do
+		for program in "${build_if_possible_progs[@]}"; do
 			if [ -x "$install_path/bin/$program" ]; then
 				coreutils_programs+=("$program")
 			else
@@ -152,10 +152,10 @@ install_version() {
 		done
 		echo "$TOOL_NAME $version installation was successful!"
 		echo "The following programs were installed:"
-		print_tools "$coreutils_programs"
+		print_tools "${coreutils_programs[@]}"
 
 		echo "The following programs were not installed:"
-		print_tools "$not_installed_programs"
+		print_tools "${not_installed_programs[@]}"
 	) || (
 		rm -rf "$install_path"
 		fail "An error ocurred while installing $TOOL_NAME $version. install log is $install_log"
