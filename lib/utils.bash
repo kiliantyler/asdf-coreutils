@@ -116,8 +116,8 @@ install_version() {
 					;;
 				default__progs*src/*)
 					if [[ "${line#*src/}" == "ginstall" ]]; then
-          	line=install
-        	fi
+						line=install
+					fi
 					default_progs+=("${line#*src/}")
 					;;
 				esac
