@@ -62,7 +62,7 @@ print_table() {
 }
 
 download_release() {
-	local version filename url sig_url gnu_keyring gpg_command detail
+	local version filename url sig_url gnu_keyring gpg_command
 	version="$1"
 	filename="$2"
 
@@ -139,7 +139,7 @@ install_version() {
 		programs=("${default_progs[@]}")
 
 		if [ -n "$ADDITIONAL_BUILD_PROGRAMS" ]; then
-			programs+=($(echo "$ADDITIONAL_BUILD_PROGRAMS" | tr ',' '\n'))
+			IFS=" " read -r -a programs <<<"$(echo "$ADDITIONAL_BUILD_PROGRAMS" | tr ',' '\n')"
 		fi
 
 		# validate the rest of the programs are installed
